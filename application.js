@@ -800,6 +800,9 @@ async function main() {
         if (["Delivered", "Out for delivery"].includes(o.status))
           throw Error("Cannot reassign during or after delivery");
         o.driver = await driver();
+      } else if (action === "assign-pickups") {
+        if (!manager) return deny();
+        detail = { pickups: operations.assignPickups(o, await driver()) };
       } else if (action === "assign-pickup") {
         if (!manager) return deny();
         const task = pickups.find((p) => p.id === q.body.pickup);
@@ -1025,9 +1028,27 @@ async function main() {
       if (o.status === "At warehouse" && !o.warehouseReadyAt)
         o.warehouseReadyAt = at;
       customerUpdates.queueUpdate(o, action, q.user.id);
-      r.json(control.publicOrder(await save("orders", o)));
+      const saved = await save("orders", o);
+      if (["assign", "assign-pickup", "assign-pickups"].includes(action))
+        return r.json({
+          id: saved.id,
+          awb: saved.awb,
+          status: saved.status,
+          driver: saved.driver,
+          _revision: saved._revision,
+          pickups: saved.pickups.map(({ id, driver, completed }) => ({
+            id,
+            driver,
+            completed,
+          })),
+        });
+      r.json(control.publicOrder(saved));
     } catch (e) {
-      r.status(e.status || 400).json({ error: e.message });
+      r.status(e.status || 400).json({
+        error: e.message,
+        code: e.code,
+        databaseCode: e.databaseCode,
+      });
     }
   });
   app.use((e, q, r, n) => r.status(e.status || 400).json({ error: e.message }));

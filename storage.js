@@ -119,11 +119,46 @@ function createStorage(env = process.env, clientOverride) {
   function checked(result) {
     if (result.error) {
       if (result.error.code === "23505") throw conflict();
+      const code = result.error.code;
+      const databaseCode =
+        typeof code === "string" &&
+        /^(?:[0-9A-Z]{5}|PGRST[0-9A-Z]{3})$/.test(code)
+          ? code
+          : undefined;
+      let reason = "SUPABASE_REQUEST_FAILED",
+        message =
+          "Supabase could not confirm this request. Refresh the order before retrying.";
+      if (code === "42501" || [401, 403].includes(result.status)) {
+        reason = "SUPABASE_ACCESS_DENIED";
+        message =
+          "Supabase denied this request. The administrator must check the server credential and table permissions.";
+      } else if (["42P01", "42703", "PGRST204", "PGRST205"].includes(code)) {
+        reason = "SUPABASE_SCHEMA_MISMATCH";
+        message =
+          "Supabase reports a missing table or column. The administrator must check the configured delivery schema.";
+      } else if (["23514", "23502", "22P02"].includes(code)) {
+        reason = "SUPABASE_RECORD_REJECTED";
+        message =
+          "Supabase rejected this record’s format or constraints. The administrator must inspect the database validation error.";
+      } else if (
+        code === "57014" ||
+        code === "PGRST003" ||
+        result.status === 504
+      ) {
+        reason = "SUPABASE_TIMEOUT";
+        message =
+          "The Supabase request timed out. Refresh to check whether the assignment was saved before retrying.";
+      } else if (result.status === 0 || !code) {
+        reason = "SUPABASE_CONNECTION_FAILED";
+        message =
+          "The app could not confirm a response from Supabase. Check the refreshed order before retrying.";
+      }
       throw Object.assign(
         new Error(
-          "Supabase storage request failed; check database schema and server credentials.",
+          message +
+            (databaseCode ? " (database code " + databaseCode + ")" : ""),
         ),
-        { status: 503 },
+        { status: 503, code: reason, databaseCode },
       );
     }
     return result.data;
@@ -174,9 +209,10 @@ function createStorage(env = process.env, clientOverride) {
         : client
             .from("delivery_records")
             .insert({ kind, id: body.id, body: encode(body) });
-      const rows = checked(await query.select("body,revision"));
+      // Confirm the revision without downloading proof images again after every save.
+      const rows = checked(await query.select("revision"));
       if (rows.length !== 1) throw conflict();
-      return decode(rows[0]);
+      return { ...body, _revision: rows[0].revision };
     },
     async insertMany(kind, bodies) {
       if (bodies.length)

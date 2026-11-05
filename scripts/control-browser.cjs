@@ -150,6 +150,76 @@ const fs = require("node:fs"),
       path: "/tmp/mawada-operations-control.png",
       fullPage: true,
     });
+    // A save may succeed even when its response is lost; reconcile against fresh state.
+    await page.locator('[data-view="assignments"]').click();
+    await page.locator("#addPrintAwbs textarea").fill(order.awb);
+    await page.locator("#addPrintAwbs button").click();
+    await page.locator("#assignmentDriver").selectOption(driver.id);
+    await page.locator("#assignmentLeg").selectOption("pickup");
+    const actionUrl = "**/api/orders/" + order.id + "/action";
+    await context.route(actionUrl, async (route) => {
+      await route.fetch();
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "Fixture: response could not be confirmed",
+          code: "SUPABASE_CONNECTION_FAILED",
+        }),
+      });
+    });
+    await page.locator("#printBatch").click();
+    await page
+      .getByText(
+        /current pickup assignment confirmed after refresh; no retry needed/,
+      )
+      .waitFor();
+    assert.equal(
+      (await request("state")).orders[0].history.filter(
+        (h) => h.event === "assign-pickups",
+      ).length,
+      1,
+    );
+    await context.unroute(actionUrl);
+    // A failure before the write must remain unconfirmed and must not claim partial pickup assignment for delivery.
+    await page.locator("#addPrintAwbs textarea").fill(order.awb);
+    await page.locator("#addPrintAwbs button").click();
+    await page.locator("#assignmentLeg").selectOption("delivery");
+    await context.route(actionUrl, (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "Fixture: request not sent",
+          code: "SUPABASE_CONNECTION_FAILED",
+        }),
+      }),
+    );
+    await page.locator("#printBatch").click();
+    await page
+      .getByText(
+        /Assignment not confirmed; review the refreshed order before retrying/,
+      )
+      .waitFor();
+    assert.ok(
+      !(await page.locator("#assignmentResults").textContent()).includes(
+        "partial pickup",
+      ),
+    );
+    assert.equal((await request("state")).orders[0].driver, null);
+    const compactReply = page.waitForResponse(
+      (r) =>
+        r.url().endsWith("/api/orders/" + order.id + "/action") &&
+        r.status() === 200,
+    );
+    await context.unroute(actionUrl);
+    await page.waitForFunction(() => !busy);
+    await page.locator("#printBatch").click();
+    await page.getByText(/delivery assigned/).waitFor();
+    const assignmentResponse = await (await compactReply).json();
+    assert.equal(assignmentResponse.proofs, undefined);
+    assert.equal(assignmentResponse.items, undefined);
+    assert.equal(assignmentResponse.driver, driver.id);
     await page.locator("#logout").click();
     await page.getByRole("heading", { name: "Welcome back" }).waitFor();
     await page.locator('#auth [name="email"]').fill("driver@example.test");
