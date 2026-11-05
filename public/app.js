@@ -37,6 +37,7 @@ async function api(url, body) {
     throw Object.assign(Error(j.error || "Request failed"), {
       status: r.status,
       code: j.code,
+      phase: j.phase,
       duplicates: j.duplicates,
     });
   return j;
@@ -129,7 +130,7 @@ async function boot() {
       else throw error;
     }
   } catch (error) {
-    app.innerHTML = `<section class="auth"><h1>App setup needs attention</h1><p>${esc(error.message)}</p><p>Your data has not been moved or replaced. On-device proof drafts are retained; reconnect and sign in with the same account to review them.</p><button id="retryStartup">Try again</button><a class="primaryLink" href="/demo">Try the sample-data demo</a><p class="muted">The demo is separate from your operational data. Share the error code with your administrator: ${esc(error.code || "CONNECTION_ERROR")}</p></section>`;
+    app.innerHTML = `<section class="auth"><h1>App setup needs attention</h1><p>${esc(error.message)}</p><p>Your data has not been moved or replaced. On-device proof drafts are retained; reconnect and sign in with the same account to review them.</p><button id="retryStartup">Try again</button><a class="primaryLink" href="/demo">Try the sample-data demo</a><p class="muted">The demo is separate from your operational data. Share the error code with your administrator: ${esc(error.code || "CONNECTION_ERROR")}${error.phase ? " · Initialization step: " + esc(error.phase) : ""}</p></section>`;
     $("#retryStartup").onclick = boot;
   }
 }

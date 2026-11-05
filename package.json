@@ -6,7 +6,7 @@
   "scripts": {
     "test": "node --test",
     "start": "node server.js",
-    "format:check": "prettier --check server.js application.js operational-routes.js mawada-import.js domain.js storage.js reliability.js control-routes.js customer-updates.js chat-routes.js public test scripts package.json",
+    "format:check": "prettier --check server.js application.js operational-routes.js mawada-import.js domain.js storage.js reliability.js control-routes.js customer-updates.js chat-routes.js startup-diagnostics.js public test scripts package.json",
     "test:browser": "node scripts/browser-smoke.cjs && node scripts/control-browser.cjs && node scripts/chat-browser.cjs",
     "backup": "node scripts/backup.cjs backup",
     "backup:verify": "node scripts/backup.cjs verify",

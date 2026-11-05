@@ -4,6 +4,7 @@ const app = express();
 let application;
 let startup = {
   code: "STARTING",
+  phase: "module-loading",
   message: "The application is starting. Try again shortly.",
 };
 app.use(
@@ -44,12 +45,19 @@ app.get("/demo/barcode/:awb", async (req, res) => {
 });
 app.get("/health/live", (_, res) => res.json({ alive: true }));
 app.get("/health/ready", (_, res) =>
-  res.status(application ? 200 : 503).json({ ready: Boolean(application) }),
+  res
+    .set("Cache-Control", "no-store")
+    .status(application ? 200 : 503)
+    .json(application ? { ready: true } : { ready: false, ...startup }),
 );
 app.use((req, res, next) => {
   if (application) return application(req, res, next);
   if (req.path.startsWith("/api/"))
-    return res.status(503).json({ error: startup.message, code: startup.code });
+    return res.set("Cache-Control", "no-store").status(503).json({
+      error: startup.message,
+      code: startup.code,
+      phase: startup.phase,
+    });
   if (req.path === "/")
     return res.sendFile(path.join(__dirname, "public/index.html"));
   next();
@@ -65,41 +73,14 @@ const listener = app.listen(process.env.PORT || 3000, "0.0.0.0", () =>
     application = await require("./application").createApplication();
     console.log("Delivery application ready");
   } catch (error) {
-    if (error.message.includes("SESSION_SECRET"))
-      startup = {
-        code: "SESSION_SECRET_REQUIRED",
-        message:
-          "The app administrator must configure SESSION_SECRET in hosting settings (32 or more random characters).",
-      };
-    else if (error.message.includes("SETUP_KEY"))
-      startup = {
-        code: "SETUP_KEY_REQUIRED",
-        message:
-          "The app administrator must configure SETUP_KEY in hosting settings before creating the first account.",
-      };
-    else if (error.message.includes("Supabase requires"))
-      startup = {
-        code: "SUPABASE_CREDENTIALS_REQUIRED",
-        message:
-          "The app administrator must configure SUPABASE_URL and a server-only Supabase service-role or secret key in hosting settings.",
-      };
-    else if (
-      error.message.includes("Supabase") ||
-      error.message.includes("fetch failed")
-    )
-      startup = {
-        code: "SUPABASE_UNAVAILABLE",
-        message:
-          "The cloud database could not be reached. The app administrator must check the database table, project status and server credentials.",
-      };
-    else
-      startup = {
-        code: "APPLICATION_STARTUP_FAILED",
-        message:
-          "The application could not initialize. The administrator should check Hostinger runtime logs.",
-      };
+    startup = require("./startup-diagnostics").diagnose(error);
     console.error(
-      "Application startup failed [" + startup.code + "]: " + error.message,
+      "Application startup failed [" +
+        startup.code +
+        "] at " +
+        startup.phase +
+        ": " +
+        error.message,
     );
   }
 })();
