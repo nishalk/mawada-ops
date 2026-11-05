@@ -400,39 +400,76 @@ function renderAssignmentWorkspace(root) {
       if (!driver) throw Error("Choose a driver");
       labelReader?.reset();
       labelReader = null;
-      const results = [];
+      const outcomes = [];
       for (const id of [...labelSelection]) {
         const order = state.orders.find((o) => o.id === id);
         if (!order) continue;
+        const outcome = { id, awb: order.awb, attempted: false, tasks: [] };
         try {
           if (leg === "pickup") {
-            const tasks = order.pickups.filter((p) => !p.completed);
-            if (!tasks.length) throw Error("No incomplete pickups");
-            for (const p of tasks)
-              await api("orders/" + encodeURIComponent(id) + "/action", {
-                action: "assign-pickup",
-                pickup: p.id,
-                driver,
-              });
-            results.push(order.awb + ": " + tasks.length + " pickups assigned");
-          } else {
-            await api("orders/" + encodeURIComponent(id) + "/action", {
-              action: "assign",
-              driver,
-            });
-            results.push(order.awb + ": delivery assigned");
+            outcome.tasks = order.pickups
+              .filter((p) => !p.completed)
+              .map((p) => p.id);
+            if (!outcome.tasks.length)
+              throw Error(
+                "No incomplete pickups remain; completed pickups do not need assignment.",
+              );
           }
+          outcome.attempted = true;
+          await api("orders/" + encodeURIComponent(id) + "/action", {
+            action: leg === "pickup" ? "assign-pickups" : "assign",
+            driver,
+          });
+          outcome.message =
+            leg === "pickup"
+              ? outcome.tasks.length + " pickups assigned together"
+              : "delivery assigned";
           labelSelection.delete(id);
         } catch (error) {
-          results.push(
-            order.awb +
-              ": " +
-              error.message +
-              " (check for partial pickup assignment before retrying)",
+          outcome.error = error;
+        }
+        outcomes.push(outcome);
+      }
+      let refreshed = false;
+      try {
+        state = await api("state");
+        refreshed = true;
+      } catch {
+        /* Preserve per-order results when the refresh is unavailable. */
+      }
+      const results = outcomes.map((o) => {
+        if (!o.error) return o.awb + ": " + o.message;
+        const current = refreshed && state.orders.find((x) => x.id === o.id);
+        const uncertain =
+          o.attempted && (!o.error.status || o.error.status === 503);
+        const confirmed =
+          current &&
+          (leg === "delivery"
+            ? current.driver === driver
+            : o.tasks.length &&
+              o.tasks.every((id) =>
+                current.pickups.some((p) => p.id === id && p.driver === driver),
+              ));
+        if (uncertain && confirmed) {
+          labelSelection.delete(o.id);
+          return (
+            o.awb +
+            ": current " +
+            leg +
+            " assignment confirmed after refresh; no retry needed"
           );
         }
-      }
-      state = await api("state");
+        return (
+          o.awb +
+          ": " +
+          o.error.message +
+          (uncertain
+            ? refreshed
+              ? " Assignment not confirmed; review the refreshed order before retrying."
+              : " Could not refresh the order; check its assignment before retrying."
+            : "")
+        );
+      });
       root.redrawLabelQueue?.();
       root.querySelector("#assignmentResults").textContent =
         results.join(" · ");

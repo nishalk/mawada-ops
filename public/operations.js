@@ -9,6 +9,23 @@
   };
   const activeTrips = (order) =>
     (order.trips || []).filter((t) => t.status === "In transit");
+  function assignPickups(order, driverId) {
+    const pending = (order.pickups || []).filter((p) => !p.completed);
+    if (!pending.length)
+      reject("No incomplete vendor pickups remain on this order.");
+    if (!["Created", "Picked up", "At warehouse"].includes(order.status))
+      reject("Pickups cannot be assigned at this order stage.");
+    if (
+      activeTrips(order).some(
+        (t) => t.kind === "pickup" && pending.some((p) => p.id === t.pickupId),
+      )
+    )
+      reject(
+        "Finish or fail every active pickup trip before reassigning this order.",
+      );
+    for (const p of pending) p.driver = driverId;
+    return pending.map((p) => p.id);
+  }
   function normaliseTrips(order) {
     order.trips ||= [];
     if (
@@ -552,6 +569,7 @@
     recordLocation,
     driverAlerts,
     activeTrips,
+    assignPickups,
     normaliseTrips,
     claimOrder,
     startPickup,

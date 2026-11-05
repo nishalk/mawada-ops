@@ -470,6 +470,9 @@
         if (["Delivered", "Out for delivery"].includes(o.status))
           fail("Cannot reassign during or after delivery");
         o.driver = driver(b.driver);
+      } else if (b.action === "assign-pickups") {
+        assertManager();
+        RelayOperations.assignPickups(o, driver(b.driver));
       } else if (b.action === "assign-pickup") {
         assertManager();
         if (!t || t.completed) fail("Select an incomplete pickup");

@@ -45,7 +45,8 @@ test("Supabase rejects anonymous keys and does not silently fall back", () => {
 });
 test("Supabase SDK adapter reads all pages, saves with revisions, and atomically inserts batches", async () => {
   const rows = new Map();
-  let sawServerCredential = false;
+  let sawServerCredential = false,
+    sawCompactWriteResponse = false;
   const server = http.createServer(async (req, res) => {
     const u = new URL(req.url, "http://localhost");
     sawServerCredential ||=
@@ -71,6 +72,15 @@ test("Supabase SDK adapter reads all pages, saves with revisions, and atomically
     let text = "";
     for await (const c of req) text += c;
     const body = JSON.parse(text);
+    if (
+      ["POST", "PATCH"].includes(req.method) &&
+      u.searchParams.get("select") === "revision"
+    )
+      sawCompactWriteResponse = true;
+    const project = (rows) =>
+      u.searchParams.get("select") === "revision"
+        ? rows.map((r) => ({ revision: r.revision }))
+        : rows;
     if (req.method === "POST") {
       const batch = Array.isArray(body) ? body : [body];
       if (
@@ -84,13 +94,13 @@ test("Supabase SDK adapter reads all pages, saves with revisions, and atomically
       const saved = batch.map((r) => ({ ...r, revision: 1 }));
       saved.forEach((r) => rows.set(r.kind + ":" + r.id, r));
       res.statusCode = 201;
-      res.end(JSON.stringify(saved));
+      res.end(JSON.stringify(project(saved)));
       return;
     }
     if (req.method === "PATCH") {
       selected = selected.map((r) => ({ ...r, ...body }));
       selected.forEach((r) => rows.set(r.kind + ":" + r.id, r));
-      res.end(JSON.stringify(selected));
+      res.end(JSON.stringify(project(selected)));
       return;
     }
     res.statusCode = 405;
@@ -134,6 +144,7 @@ test("Supabase SDK adapter reads all pages, saves with revisions, and atomically
     assert.equal(await s.get("orders", "new"), undefined);
     assert.equal((await s.get("orders", "001")).status, "Picked up");
     assert.equal(sawServerCredential, true);
+    assert.equal(sawCompactWriteResponse, true);
   } finally {
     server.closeAllConnections();
     await new Promise((r) => server.close(r));
