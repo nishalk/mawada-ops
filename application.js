@@ -26,7 +26,13 @@ async function main() {
   const app = express();
   app.set("trust proxy", 1);
   app.set("json replacer", (key, value) =>
-    ["password", "reset", "trackingTokens", "customerUpdates"].includes(key)
+    [
+      "password",
+      "reset",
+      "trackingTokens",
+      "customerUpdates",
+      "driverChats",
+    ].includes(key)
       ? undefined
       : value,
   );
@@ -210,6 +216,7 @@ async function main() {
   });
   require("./operational-routes")(app, store, permit);
   control.install(app, store, permit, runtime);
+  require("./chat-routes")(app, store, runtime);
   app.get("/api/state", async (q, r) => {
     const orders = (await all("orders"))
       .map((o) => {

@@ -7,7 +7,12 @@ const { hash, validPassword } = require("./reliability");
 const updates = require("./customer-updates");
 const { deliveryDay } = require("./mawada-import");
 const publicUser = ({ password, reset, ...user }) => user;
-const publicOrder = ({ trackingTokens, customerUpdates, ...order }) => order;
+const publicOrder = ({
+  trackingTokens,
+  customerUpdates,
+  driverChats,
+  ...order
+}) => order;
 function installPublic(app, store, runtime) {
   app.post(
     "/api/recovery/request",

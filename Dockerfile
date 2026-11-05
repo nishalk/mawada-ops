@@ -3,7 +3,7 @@ ENV NODE_ENV=production
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
-COPY --chown=node:node server.js application.js operational-routes.js mawada-import.js demo-orders.js demo-media.js order-template.js domain.js storage.js reliability.js control-routes.js customer-updates.js ./
+COPY --chown=node:node server.js application.js operational-routes.js mawada-import.js demo-orders.js demo-media.js order-template.js domain.js storage.js reliability.js control-routes.js customer-updates.js chat-routes.js ./
 COPY --chown=node:node public ./public
 COPY --chown=node:node scripts ./scripts
 RUN mkdir -p /app/data && chown node:node /app/data

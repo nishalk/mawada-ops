@@ -1,4 +1,4 @@
-const CACHE = "mawada-shell-control-v1";
+const CACHE = "mawada-shell-chat-v2";
 const ASSETS = [
   "/index.html",
   "/style.css",
@@ -12,6 +12,7 @@ const ASSETS = [
   "/tracking-labels.js",
   "/demo.js",
   "/app.js",
+  "/chat.js",
   "/brand/mawada-logo.png",
 ];
 self.addEventListener("install", (event) =>

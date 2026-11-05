@@ -180,6 +180,15 @@ function render() {
       : []),
     { id: "orders", label: "Orders", symbol: "orders" },
     { id: "labels", label: "AWB printing", symbol: "box" },
+    ...(canChat()
+      ? [
+          {
+            id: "chat",
+            label: state.user.role === "driver" ? "Messages" : "Driver chat",
+            symbol: "users",
+          },
+        ]
+      : []),
     ...(ops
       ? [
           { id: "create", label: "New order / Excel", symbol: "plus" },
@@ -216,6 +225,7 @@ function render() {
   if (!pages.some((p) => p.id === view)) view = "orders";
   $("#logout").hidden = false;
   const titles = {
+    chat: "Keep your team connected.",
     control: "Keep every delivery promise in view.",
     assignments: "The right order. The right driver.",
     labels: "Ready to label. Ready to deliver.",
@@ -227,7 +237,7 @@ function render() {
     reports: "The full story of every order.",
     settings: "Make Mawada yours.",
   };
-  app.innerHTML = `<div class="appShell"><aside class="workspaceSidebar"><div class="workspaceLabel">WORKSPACE <span class="liveDot"></span></div><div class="workspaceName">Mawada delivery<small>One warehouse · Online delivery</small></div><nav aria-label="Workspace navigation">${pages.map((p) => `<button data-view="${p.id}" class="${view === p.id ? "active" : ""}" ${view === p.id ? 'aria-current="page"' : ""}>${icon(p.symbol)}<span>${p.label}</span>${p.id === "orders" ? `<span class="navCount">${state.orders.length}</span>` : ""}</button>`).join("")}</nav><div class="sidebarNote">${icon("check")}<div>Complete orders only<small>Every item checked before dispatch.</small></div></div><div class="userCard"><span class="avatar">${esc(state.user.name.slice(0, 2).toUpperCase())}</span><div><strong>${esc(state.user.name)}</strong><small>${esc(state.user.role)}</small></div></div></aside><div class="workspaceMain"><div class="pageHeading"><div><div class="eyebrow">OPERATIONS / ${esc(pages.find((p) => p.id === view).label.toUpperCase())}</div><h1>${titles[view]}</h1><p class="muted">${view === "orders" ? "Track pickups, consolidate with confidence, and keep deliveries moving." : "Everything your team needs, without the extra steps."}</p></div>${ops && MawadaAccess.allowed(state.user, "create") && view === "orders" ? `<button class="primary" id="quickCreate">${icon("plus")} Create order</button>` : ""}</div>${admin ? `<div class="storageNote"><span class="liveDot"></span>${state.storageBackend === "supabase" ? "Cloud database: Supabase" : state.storageBackend === "demo" ? "Sample demo · browser only" : "Local trial database"}</div>` : ""}${view === "orders" ? `<div class="stats">${statuses.map((s, i) => `<button class="stat ${statusClass(s)} ${statusFilter === s ? "selected" : ""}" data-status="${s}" aria-pressed="${statusFilter === s}"><div class="statTop"><span>${s}</span>${icon(["box", "truck", "warehouse", "truck", "alert", "check"][i])}</div><div class="statBottom"><strong>${state.orders.filter((o) => o.status === s).length}</strong><span>View orders</span></div></button>`).join("")}</div>` : ""}${ops && view === "orders" ? '<div id="fleetPanel"></div>' : ""}<div id="content"></div><footer class="workspaceFooter"><span>Mawada · Kuwait delivery</span><span>Pickup → Warehouse → Delivery</span></footer></div></div>`;
+  app.innerHTML = `<div class="appShell"><aside class="workspaceSidebar"><div class="workspaceLabel">WORKSPACE <span class="liveDot"></span></div><div class="workspaceName">Mawada delivery<small>One warehouse · Online delivery</small></div><nav aria-label="Workspace navigation">${pages.map((p) => `<button data-view="${p.id}" class="${view === p.id ? "active" : ""}" ${view === p.id ? 'aria-current="page"' : ""}>${icon(p.symbol)}<span>${p.label}</span>${p.id === "orders" ? `<span class="navCount">${state.orders.length}</span>` : p.id === "chat" ? '<span class="chatUnread" hidden></span>' : ""}</button>`).join("")}</nav><div class="sidebarNote">${icon("check")}<div>Complete orders only<small>Every item checked before dispatch.</small></div></div><div class="userCard"><span class="avatar">${esc(state.user.name.slice(0, 2).toUpperCase())}</span><div><strong>${esc(state.user.name)}</strong><small>${esc(state.user.role)}</small></div></div></aside><div class="workspaceMain"><div class="pageHeading"><div><div class="eyebrow">OPERATIONS / ${esc(pages.find((p) => p.id === view).label.toUpperCase())}</div><h1>${titles[view]}</h1><p class="muted">${view === "orders" ? "Track pickups, consolidate with confidence, and keep deliveries moving." : "Everything your team needs, without the extra steps."}</p></div>${ops && MawadaAccess.allowed(state.user, "create") && view === "orders" ? `<button class="primary" id="quickCreate">${icon("plus")} Create order</button>` : ""}</div>${admin ? `<div class="storageNote"><span class="liveDot"></span>${state.storageBackend === "supabase" ? "Cloud database: Supabase" : state.storageBackend === "demo" ? "Sample demo · browser only" : "Local trial database"}</div>` : ""}${view === "orders" ? `<div class="stats">${statuses.map((s, i) => `<button class="stat ${statusClass(s)} ${statusFilter === s ? "selected" : ""}" data-status="${s}" aria-pressed="${statusFilter === s}"><div class="statTop"><span>${s}</span>${icon(["box", "truck", "warehouse", "truck", "alert", "check"][i])}</div><div class="statBottom"><strong>${state.orders.filter((o) => o.status === s).length}</strong><span>View orders</span></div></button>`).join("")}</div>` : ""}${ops && view === "orders" ? '<div id="fleetPanel"></div>' : ""}<div id="content"></div><footer class="workspaceFooter"><span>Mawada · Kuwait delivery</span><span>Pickup → Warehouse → Delivery</span></footer></div></div>`;
   document.querySelectorAll("[data-view]").forEach(
     (b) =>
       (b.onclick = () => {
@@ -260,6 +270,7 @@ function render() {
   if (view === "assignments") renderAssignmentWorkspace(c);
   if (view === "dashboard") renderExecutiveDashboard(c);
   if (view === "control") renderControlWorkspace(c);
+  if (view === "chat") renderChat(c);
   if (ops && MawadaAccess.allowed(state.user, "dashboard") && view === "orders")
     renderFleet($("#fleetPanel"));
 }
@@ -533,6 +544,7 @@ function orders(c) {
  }
  ${orderDeliveryNotes(o)}
  ${journey(o)}
+ ${canChat() && !window.relayDemo && !o.demoData ? `<button class="ghost" data-order-chat="${esc(o.id)}">${state.user.role === "driver" ? "Message operations" : "Chat with driver"}</button>` : ""}
  <div class="orderActionRow"><span class="nextStep">${icon(o.status === "Delivered" ? "check" : "clock")}${esc(nextStep(o))}</span>${button(o, "label", "Print AWB label")}</div>
  ${o.demoData ? '<p class="demoAccountNotice">FICTIONAL DEMO · simulated milestones/proof · do not dispatch</p>' : ""}
  <details class="orderWorkflow" ${selectedOrder === o.id ? "open" : ""}><summary><span>${icon("orders")} Manage workflow</span><span>${o.items.filter((i) => i.received).length}/${o.items.length} items received</span></summary><div class="orderBody">
@@ -564,6 +576,9 @@ function orders(c) {
  <details><summary>History and proof</summary>${o.history.map((h) => `<p>${esc(h.event)} · ${esc(h.by || "")} · ${new Date(h.at).toLocaleString("en-GB", { timeZone: "Asia/Kuwait" })}${h.reason ? " · " + esc(h.reason) : ""}${h.date ? " · " + esc(h.date) : ""}${h.item ? " · item " + esc(h.item) : ""}</p>`).join("")}${(o.proofs || []).map((p) => `<p>${esc(p.stage)} · ${esc(p.vendor || "")} · ${esc(p.name)} · GPS ${p.lat}, ${p.lng}</p><img width="180" src="${p.photo}" alt="Handover photo">${p.signature ? `<img width="180" src="${p.signature}" alt="Recipient signature">` : ""}`).join("")}</details></div></details></section>`,
     )
     .join("")}</div>`;
+  c.querySelectorAll("[data-order-chat]").forEach(
+    (b) => (b.onclick = () => openDriverChat(b.dataset.orderChat)),
+  );
   $("#orderSort").value = sortOrder;
   const applyFilters = () => {
     const cards = [...document.querySelectorAll("#orderList > .orderCard")];
@@ -899,6 +914,7 @@ $("#logout").onclick = () =>
     )
       return;
     await api("logout", {});
+    chatDrafts.clear();
     if (!window.relayDemo) {
       try {
         await ProofDrafts.clearUser(state.user.id);
