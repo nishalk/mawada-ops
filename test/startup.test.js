@@ -33,7 +33,9 @@ test(
       assert.equal(health.status, 503);
       const setup = await fetch(url + "/api/setup");
       assert.equal(setup.status, 503);
-      assert.equal((await setup.json()).code, "SESSION_SECRET_REQUIRED");
+      const diagnostic = await setup.json();
+      assert.equal(diagnostic.code, "SESSION_SECRET_REQUIRED");
+      assert.equal(diagnostic.phase, "configuration");
       assert.equal((await fetch(url + "/health/live")).status, 200);
       assert.equal((await fetch(url + "/demo")).status, 200);
       assert.equal((await fetch(url + "/driver")).status, 200);

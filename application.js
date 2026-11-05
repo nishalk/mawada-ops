@@ -18,8 +18,16 @@ const access = require("./public/access");
 const control = require("./control-routes");
 const customerUpdates = require("./customer-updates");
 const { DurableSessions, validPassword } = require("./reliability");
+async function startupStep(phase, action) {
+  try {
+    return await action();
+  } catch (error) {
+    error.startupPhase = phase;
+    throw error;
+  }
+}
 async function main() {
-  const store = createStorage();
+  const store = await startupStep("database", () => createStorage());
   const all = (kind) => store.all(kind);
   const get = (kind, id) => store.get(kind, id);
   const save = (kind, body) => store.save(kind, body);
@@ -38,22 +46,25 @@ async function main() {
   );
   app.use(express.json({ limit: "8mb" }));
   const production = process.env.NODE_ENV === "production";
-  if (production && (process.env.SESSION_SECRET || "").length < 32)
-    throw Error(
-      "Set SESSION_SECRET to a random value of at least 32 characters",
-    );
-  if (
-    (process.env.SETUP_KEY || production) &&
-    (process.env.SETUP_KEY || "").length < 32 &&
-    !(await all("users")).length
-  )
-    throw Error(
-      "Set SETUP_KEY to a separate random value of at least 32 characters before first setup",
-    );
+  await startupStep("configuration", async () => {
+    if (production && (process.env.SESSION_SECRET || "").length < 32)
+      throw Error(
+        "Set SESSION_SECRET to a random value of at least 32 characters",
+      );
+    if (
+      (process.env.SETUP_KEY || production) &&
+      (process.env.SETUP_KEY || "").length < 32 &&
+      !(await all("users")).length
+    )
+      throw Error(
+        "Set SETUP_KEY to a separate random value of at least 32 characters before first setup",
+      );
+  });
   const secret =
     process.env.SESSION_SECRET || crypto.randomBytes(48).toString("hex");
-  const runtime = new DurableSessions(
-    process.env.DATA_DIR || path.resolve("data"),
+  const runtime = await startupStep(
+    "session-storage",
+    () => new DurableSessions(process.env.DATA_DIR || path.resolve("data")),
   );
   app.use(
     session({
@@ -214,9 +225,11 @@ async function main() {
         .json({ error: "Your account does not have access to this action." });
     n();
   });
-  require("./operational-routes")(app, store, permit);
-  control.install(app, store, permit, runtime);
-  require("./chat-routes")(app, store, runtime);
+  await startupStep("routes", () => {
+    require("./operational-routes")(app, store, permit);
+    control.install(app, store, permit, runtime);
+    require("./chat-routes")(app, store, runtime);
+  });
   app.get("/api/state", async (q, r) => {
     const orders = (await all("orders"))
       .map((o) => {
@@ -1019,15 +1032,19 @@ async function main() {
   });
   app.use((e, q, r, n) => r.status(e.status || 400).json({ error: e.message }));
   // Persist stable pickup identifiers for orders created before vendor tasks existed.
-  for (const order of await all("orders")) {
-    const mediaChanged = require("./demo-media").enrichDemoOrder(order);
-    if (!order.pickups || !order.trips) {
-      pickupTasks(order);
-      operations.normaliseTrips(order);
-      await save("orders", order);
-    } else if (mediaChanged) await save("orders", order);
-  }
-  require("./scripts/backup.cjs").schedule();
+  await startupStep("order-migration", async () => {
+    for (const order of await all("orders")) {
+      const mediaChanged = require("./demo-media").enrichDemoOrder(order);
+      if (!order.pickups || !order.trips) {
+        pickupTasks(order);
+        operations.normaliseTrips(order);
+        await save("orders", order);
+      } else if (mediaChanged) await save("orders", order);
+    }
+  });
+  await startupStep("backup-scheduler", () =>
+    require("./scripts/backup.cjs").schedule(),
+  );
   return app;
 }
 module.exports = { createApplication: main };
